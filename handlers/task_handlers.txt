@@ -1,0 +1,29 @@
+// task_handlers.go
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"myproject/database"
+)
+
+// HandleTaskID handles getting a task by ID
+func HandleTaskID(repository *database.Repository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, `{"error":"Не указан идентификатор"}`, http.StatusBadRequest)
+			return
+		}
+
+		task, err := repository.GetTaskByID(id)
+		if err != nil {
+			http.Error(w, `{"error":"Задача не найдена"}`, http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(task)
+	}
+}
