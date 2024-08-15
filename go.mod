@@ -1,4 +1,4 @@
-module myproject
+module github.com/Legibl/go_final_project
 
 go 1.21.6
 

@@ -11,17 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"myproject/database"
+	"github.com/Legibl/go_final_project/database"
 )
-
-// Task represents a task structure
-type Task struct {
-	ID      int64  `json:"id"`
-	Date    string `json:"date"`
-	Title   string `json:"title"`
-	Comment string `json:"comment,omitempty"`
-	Repeat  string `json:"repeat,omitempty"`
-}
 
 func TaskHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -33,7 +24,7 @@ func TaskHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePostTask(w http.ResponseWriter, r *http.Request) {
-	var task Task
+	var task database.Task
 	decoder := json.NewDecoder(r.Body)
 	err := decoder.Decode(&task)
 	if err != nil {
@@ -46,7 +37,7 @@ func handlePostTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dateFormat := "20060102"
+	dateFormat := database.DateFormat
 	var date time.Time
 	if task.Date == "" {
 		date = time.Now()
@@ -80,14 +71,9 @@ func handlePostTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	res, err := database.DB.Exec("INSERT INTO scheduler (date, title, comment, repeat) VALUES (?, ?, ?, ?)",
-		task.Date, task.Title, task.Comment, task.Repeat)
-	if err != nil {
-		http.Error(w, `{"error":"Ошибка в базе данных"}`, http.StatusInternalServerError)
-		return
-	}
+	repository := database.NewRepository(database.DB)
 
-	id, err := res.LastInsertId()
+	id, err := repository.AddTask(task)
 	if err != nil {
 		http.Error(w, `{"error":"Ошибка в базе данных"}`, http.StatusInternalServerError)
 		return
@@ -126,7 +112,7 @@ func validateRepeatPattern(pattern string) error {
 }
 
 func NextDate(now time.Time, date string, repeat string) (string, error) {
-	startDate, err := time.Parse("20060102", date)
+	startDate, err := time.Parse(database.DateFormat, date)
 	if err != nil {
 		return "", fmt.Errorf("Недопустимый формат даты: %w", err)
 	}
@@ -153,7 +139,7 @@ func NextDate(now time.Time, date string, repeat string) (string, error) {
 		for !nextDate.After(now) {
 			nextDate = nextDate.AddDate(0, 0, days)
 		}
-		return nextDate.Format("20060102"), nil
+		return nextDate.Format(database.DateFormat), nil
 	case "y":
 		if len(parts) != 1 {
 			return "", errors.New("Недопустимый формат правила повторения для годового правила")
@@ -162,7 +148,7 @@ func NextDate(now time.Time, date string, repeat string) (string, error) {
 		for !nextDate.After(now) {
 			nextDate = nextDate.AddDate(1, 0, 0)
 		}
-		return nextDate.Format("20060102"), nil
+		return nextDate.Format(database.DateFormat), nil
 	default:
 		return "", errors.New("Неподдерживаемое правило повтора")
 	}
@@ -173,7 +159,7 @@ func NextDateHandler(w http.ResponseWriter, r *http.Request) {
 	dateStr := r.FormValue("date")
 	repeatStr := r.FormValue("repeat")
 
-	now, err := time.Parse("20060102", nowStr)
+	now, err := time.Parse(database.DateFormat, nowStr)
 	if err != nil {
 		http.Error(w, "Недопустимый формат даты 'now'", http.StatusBadRequest)
 		return
@@ -198,4 +184,156 @@ func NextDayCalculation() {
 		log.Fatalf("Error calculating next date: %v", err)
 	}
 	fmt.Printf("Next Date: %s\n", nextDate)
+}
+
+func HandleTaskID(repository *database.Repository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, `{"error":"Не указан идентификатор"}`, http.StatusBadRequest)
+			return
+		}
+
+		task, err := repository.GetTaskByID(id)
+		if err != nil {
+			log.Println(err)
+			http.Error(w, `{"error":"Задача не найдена"}`, http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(task)
+	}
+}
+
+func HandleTaskDelete(repository *database.Repository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, `{"error":"Идентификатор задачи не указан"}`, http.StatusBadRequest)
+			return
+		}
+
+		if err := repository.DeleteTask(id); err != nil {
+			log.Println(err)
+			http.Error(w, `{"error":"Ошибка в базе данных"}`, http.StatusInternalServerError)
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{})
+	}
+}
+
+func HandleTaskDone(repository *database.Repository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, `{"error":"Идентификатор задачи не указан"}`, http.StatusBadRequest)
+			return
+		}
+
+		task, err := repository.GetTaskByID(id)
+		if err != nil {
+			log.Println(err)
+			http.Error(w, `{"error":"Задача не найдена"}`, http.StatusNotFound)
+			return
+		}
+
+		if task.Repeat == "" {
+			if err := repository.DeleteTask(id); err != nil {
+				log.Println(err)
+				http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			nextDate, err := NextDate(time.Now(), task.Date, task.Repeat)
+			if err != nil {
+				log.Println(err)
+				http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
+				return
+			}
+
+			task.Date = nextDate
+			if err := repository.UpdateTask(*task); err != nil {
+				log.Println(err)
+				http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{})
+	}
+}
+
+func HandleTaskPut(repository *database.Repository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var task database.Task
+		if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+			log.Println(err)
+			http.Error(w, `{"error":"Некорректный JSON"}`, http.StatusBadRequest)
+			return
+		}
+
+		if task.ID == "" {
+			http.Error(w, `{"error":"Не указан идентификатор"}`, http.StatusBadRequest)
+			return
+		}
+
+		if task.Date == "" || task.Title == "" {
+			http.Error(w, `{"error":"Не указаны дата и заголовок"}`, http.StatusBadRequest)
+			return
+		}
+
+		if err := validateDate(task.Date); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
+			return
+		}
+
+		if err := repository.UpdateTask(task); err != nil {
+			log.Println(err)
+			http.Error(w, `{"error":"Задача не найдена"}`, http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{})
+	}
+}
+
+func validateDate(date string) error {
+	parsedDate, err := time.Parse(database.DateFormat, date)
+	if err != nil {
+		return errors.New("Некорректный формат даты")
+	}
+
+	if parsedDate.Before(time.Now()) {
+		return errors.New("Дата не может быть меньше сегодняшней")
+	}
+
+	return nil
+}
+
+func HandleTaskGet(repository *database.Repository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		search := r.URL.Query().Get("search")
+		tasks, err := repository.GetTasks(search)
+		if err != nil {
+			log.Println(err)
+			http.Error(w, `{"error": "Ошибка получения задач"}`, http.StatusInternalServerError)
+			return
+		}
+
+		if tasks == nil {
+			tasks = []database.Task{}
+		}
+
+		response := map[string][]database.Task{
+			"tasks": tasks,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}
 }

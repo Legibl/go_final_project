@@ -9,8 +9,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	_ "github.com/mattn/go-sqlite3"
 
-	"myproject/database"
-	"myproject/handlers"
+	"github.com/Legibl/go_final_project/database"
+	"github.com/Legibl/go_final_project/handlers"
 )
 
 func main() {

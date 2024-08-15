@@ -6,14 +6,6 @@ import (
 	"errors"
 )
 
-type Task struct {
-	ID      string `json:"id"`
-	Date    string `json:"date"`
-	Title   string `json:"title"`
-	Comment string `json:"comment,omitempty"`
-	Repeat  string `json:"repeat,omitempty"`
-}
-
 type Repository struct {
 	DB *sql.DB
 }
@@ -69,12 +61,6 @@ func (repo *Repository) DeleteTask(id string) error {
 	return nil
 }
 
-func (repo *Repository) MarkTaskAsDone(id string) error {
-	query := "UPDATE scheduler SET done = 1 WHERE id = ?"
-	_, err := repo.DB.Exec(query, id)
-	return err
-}
-
 func (repo *Repository) GetTasks(search string) ([]Task, error) {
 	query := "SELECT id, date, title, comment, repeat FROM scheduler"
 	args := []interface{}{}
@@ -85,7 +71,8 @@ func (repo *Repository) GetTasks(search string) ([]Task, error) {
 		args = append(args, searchTerm, searchTerm)
 	}
 
-	query += " ORDER BY date LIMIT 50"
+	query += " ORDER BY date LIMIT ?"
+	args = append(args, LimitTasks)
 
 	rows, err := repo.DB.Query(query, args...)
 	if err != nil {
@@ -102,5 +89,18 @@ func (repo *Repository) GetTasks(search string) ([]Task, error) {
 		tasks = append(tasks, task)
 	}
 
-	return tasks, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
+}
+
+func (repo *Repository) AddTask(task Task) (int64, error) {
+	res, err := repo.DB.Exec("INSERT INTO scheduler (date, title, comment, repeat) VALUES (?, ?, ?, ?)",
+		task.Date, task.Title, task.Comment, task.Repeat)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
 }

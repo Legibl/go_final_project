@@ -18,10 +18,10 @@ func InitializeDB(dataSourceName string) (*sql.DB, error) {
 	createTableQuery := `
 	CREATE TABLE IF NOT EXISTS scheduler (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		date TEXT NOT NULL,
-		title TEXT NOT NULL,
-		comment TEXT,
-		repeat TEXT
+		date TEXT NOT NULL CHECK(LENGTH(date) = 8),
+		title TEXT NOT NULL CHECK(LENGTH(title) <= 255),
+		comment TEXT TEXT CHECK(LENGTH(comment) <= 1000),
+		repeat TEXT CHECK(LENGTH(repeat) <= 20)
 	);
 	`
 
