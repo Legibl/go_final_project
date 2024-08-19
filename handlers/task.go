@@ -286,7 +286,7 @@ func HandleTaskPut(repository *database.Repository) http.HandlerFunc {
 			return
 		}
 
-		if err := validateDate(task.Date); err != nil {
+		if err := validateDate(&task); err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
 			return
 		}
@@ -302,14 +302,23 @@ func HandleTaskPut(repository *database.Repository) http.HandlerFunc {
 	}
 }
 
-func validateDate(date string) error {
-	parsedDate, err := time.Parse(database.DateFormat, date)
+func validateDate(task *database.Task) error {
+	parsedDate, err := time.Parse(database.DateFormat, task.Date)
 	if err != nil {
 		return errors.New("Некорректный формат даты")
 	}
 
+	today := time.Now().Format(database.DateFormat)
 	if parsedDate.Before(time.Now()) {
-		return errors.New("Дата не может быть меньше сегодняшней")
+		if task.Repeat == "" {
+			task.Date = today
+		} else {
+			nextDate, err := NextDate(time.Now(), task.Date, task.Repeat)
+			if err != nil {
+				return fmt.Errorf("Ошибка при расчете следующей даты: %w", err)
+			}
+			task.Date = nextDate
+		}
 	}
 
 	return nil

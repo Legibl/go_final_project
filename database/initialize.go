@@ -1,4 +1,3 @@
-// database/initialize.go
 package database
 
 import (
@@ -20,10 +19,10 @@ func InitializeDB(dataSourceName string) (*sql.DB, error) {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		date TEXT NOT NULL CHECK(LENGTH(date) = 8),
 		title TEXT NOT NULL CHECK(LENGTH(title) <= 255),
-		comment TEXT TEXT CHECK(LENGTH(comment) <= 1000),
+		description TEXT CHECK(LENGTH(description) <= 1000),
+		comment TEXT CHECK(LENGTH(comment) <= 1000),
 		repeat TEXT CHECK(LENGTH(repeat) <= 20)
-	);
-	`
+	);`
 
 	_, err = db.Exec(createTableQuery)
 	if err != nil {
